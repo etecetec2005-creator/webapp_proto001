@@ -1,19 +1,18 @@
 import streamlit as st
 
-st.set_page_config(page_title="住所取得", layout="centered")
-st.title("住所取得ツール")
+st.set_page_config(page_title="位置情報・駅取得", layout="centered")
+st.title("📍 住所 ＆ 最寄り駅 取得")
 
-st.write("ボタンを押すと「大阪市淀川区宮原三丁目」の形式で表示します。")
+st.write("ボタンを押すと、現在地の住所と一番近い駅を表示します。")
 
-# f-string(f""")を使わず、通常の文字列として定義することでPythonのエラーを完全に防ぎます
-# 📍などの絵文字は10進数エンティティ &#128205; に置き換えて安全性を高めています
+# JavaScriptコード（住所特定 ＋ 駅検索）
 location_script = """
-<div id="result" style="font-size:16px; color:#333; padding:15px; background:#f0f2f6; border-radius:10px; border-left: 5px solid #ff4b4b; min-height: 60px;">
-    &#128205; ここに住所が表示されます
+<div id="result" style="font-size:15px; color:#333; padding:15px; background:#f0f2f6; border-radius:10px; border-left: 5px solid #007bff; min-height: 80px; line-height: 1.6;">
+    🧭 ここに情報が表示されます
 </div>
 
-<button id="btn" style="margin-top:20px; padding:15px 24px; background-color:#ff4b4b; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; font-size:16px;">
-    住所を取得
+<button id="btn" style="margin-top:20px; padding:15px 24px; background-color:#007bff; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; font-size:16px;">
+    現在地を解析する
 </button>
 
 <script>
@@ -21,49 +20,58 @@ document.getElementById('btn').onclick = function() {
     const resultDiv = document.getElementById('result');
     const btn = document.getElementById('btn');
     
-    resultDiv.innerText = "解析中...";
+    resultDiv.innerHTML = "🛰️ 座標を取得中...";
     btn.disabled = true;
+    btn.style.backgroundColor = "#ccc";
 
     navigator.geolocation.getCurrentPosition(
-        function(pos) {
+        async function(pos) {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            // 精度を出すためにzoom=18を指定
-            const url = "https://nominatim.openstreetmap.org/reverse?format=json&lat=" + lat + "&lon=" + lon + "&zoom=18&addressdetails=1&accept-language=ja";
             
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (data && data.address) {
-                        const a = data.address;
-                        
-                        // 市町村・区の取得
-                        const city = a.city || a.town || a.village || "";
-                        const district = a.city_district || "";
-                        
-                        // 町名（宮原三丁目など）は suburb, neighbourhood, road のいずれかに入っていることが多い
-                        let town = a.suburb || a.neighbourhood || a.road || "";
-                        
-                        // 結合（建物名などは含めない）
-                        let finalAddr = city + district + town;
+            resultDiv.innerHTML = "🔍 住所と駅を検索中...";
+            
+            try {
+                // 1. 住所の取得 (OSM Nominatim)
+                const addrUrl = "https://nominatim.openstreetmap.org/reverse?format=json&lat=" + lat + "&lon=" + lon + "&zoom=18&addressdetails=1&accept-language=ja";
+                const addrRes = await fetch(addrUrl);
+                const addrData = await addrRes.json();
+                
+                let displayAddr = "住所不明";
+                if (addrData && addrData.address) {
+                    const a = addrData.address;
+                    const city = a.city || a.town || a.village || "";
+                    const dist = a.city_district || "";
+                    const town = a.suburb || a.neighbourhood || a.road || "";
+                    displayAddr = (city + dist + town).replace(/日本|〒[0-9-]+/g, "");
+                }
 
-                        // 最終的なクリーンアップ（日本などの不要語削除）
-                        finalAddr = finalAddr.replace(/日本|〒[0-9-]+|[a-zA-Z]/g, "").trim();
+                // 2. 最寄り駅の取得 (HeartRails Express API)
+                const stationUrl = "https://express.heartrails.com/api/json?method=getStations&x=" + lon + "&y=" + lat;
+                const stationRes = await fetch(stationUrl);
+                const stationData = await stationRes.json();
+                
+                let displayStation = "駅が見つかりませんでした";
+                if (stationData.response && stationData.response.station && stationData.response.station.length > 0) {
+                    const s = stationData.response.station[0];
+                    displayStation = s.line + " " + s.name + "駅 (約" + s.distance + ")";
+                }
 
-                        resultDiv.innerHTML = "<strong>整形後の住所:</strong><br>" + finalAddr;
-                    } else {
-                        resultDiv.innerText = "住所が見つかりませんでした。";
-                    }
-                    btn.disabled = false;
-                })
-                .catch(err => {
-                    resultDiv.innerText = "エラーが発生しました。";
-                    btn.disabled = false;
-                });
+                // 3. 結果の表示
+                resultDiv.innerHTML = "<strong>🏠 住所:</strong><br>" + displayAddr + 
+                                     "<br><br><strong>🚉 最寄り駅:</strong><br>" + displayStation;
+
+            } catch (error) {
+                resultDiv.innerHTML = "❌ 情報の取得中にエラーが発生しました。";
+            } finally {
+                btn.disabled = false;
+                btn.style.backgroundColor = "#007bff";
+            }
         },
         function(err) {
-            resultDiv.innerText = "位置情報の取得を許可してください。";
+            resultDiv.innerHTML = "⚠️ 位置情報の取得を許可してください。";
             btn.disabled = false;
+            btn.style.backgroundColor = "#007bff";
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -71,4 +79,7 @@ document.getElementById('btn').onclick = function() {
 </script>
 """
 
-st.components.v1.html(location_script, height=250)
+st.components.v1.html(location_script, height=300)
+
+st.divider()
+st.caption("※最寄り駅は現在地から直線距離で最も近いものを表示します。")
