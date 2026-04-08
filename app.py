@@ -3,7 +3,7 @@ import streamlit as st
 st.set_page_config(page_title="住所取得", layout="centered")
 st.title("📍 住所取得ツール")
 
-st.write("ボタンを押すと、現在の位置情報を「大阪市淀川区宮原3」のような形式で取得します。")
+st.write("ボタンを押すと、現在の位置情報を取得し「大阪市淀川区宮原3」の形式で表示します。")
 
 location_script = """
 <div id="result" style="font-size:16px; color:#333; padding:15px; background:#f0f2f6; border-radius:10px; border-left: 5px solid #ff4b4b;">
@@ -36,26 +36,29 @@ function getLocation() {
                 if (data && data.address) {
                     const a = data.address;
                     
-                    // 各パーツを取得（存在しない場合は空文字）
+                    // 1. 市町村・区の取得
                     const city = a.city || a.town || a.village || "";
                     const district = a.city_district || "";
-                    let suburb = a.suburb || a.neighbourhood || "";
+                    
+                    // 2. 町名・丁目部分（複数の候補から取得）
+                    let townName = a.suburb || a.neighbourhood || a.quarter || a.road || "";
 
-                    // 「三丁目」などを「3」に置換し、余計な「丁目」を消す簡易的な変換
-                    suburb = suburb.replace(/一丁目/g, '1')
-                                   .replace(/二丁目/g, '2')
-                                   .replace(/三丁目/g, '3')
-                                   .replace(/四丁目/g, '4')
-                                   .replace(/五丁目/g, '5')
-                                   .replace(/六丁目/g, '6')
-                                   .replace(/七丁目/g, '7')
-                                   .replace(/八丁目/g, '8')
-                                   .replace(/九丁目/g, '9')
-                                   .replace(/丁目/g, '');
+                    // 3. 漢数字を数字に変換する関数
+                    const kanjiMap = {
+                        '一丁目': '1', '二丁目': '2', '三丁目': '3', '四丁目': '4', '五丁目': '5',
+                        '六丁目': '6', '七丁目': '7', '八丁目': '8', '九丁目': '9', '十丁目': '10',
+                        '丁目': '' // 「丁目」自体を消す
+                    };
+                    
+                    for (let key in kanjiMap) {
+                        townName = townName.replace(new RegExp(key, 'g'), kanjiMap[key]);
+                    }
 
-                    const formattedAddr = city + district + suburb;
+                    // 結合
+                    const formattedAddr = city + district + townName;
                     
                     resultDiv.innerHTML = `<strong>整形後の住所:</strong><br>${formattedAddr}`;
+                    console.log("Debug Address Data:", a); // 取得データの中身をブラウザコンソールで確認可能
                 } else {
                     resultDiv.innerText = "住所が見つかりませんでした。";
                 }
@@ -73,4 +76,6 @@ function getLocation() {
 """
 
 st.components.v1.html(location_script, height=200)
-st.info("※OpenStreetMapのデータ構造により、場所によっては表記がわずかに異なる場合があります。")
+
+st.divider()
+st.caption("※建物内やGPS精度の低い環境では、正確な町名（宮原など）が取得できない場合があります。")
