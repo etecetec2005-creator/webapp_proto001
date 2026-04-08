@@ -31,7 +31,9 @@ if img_file:
     with st.spinner("Gemini 2.5 Flash-Lite が解析中..."):
         try:
             model = genai.GenerativeModel('gemini-2.5-flash-lite')
-            prompt = "この写真の内容を分析し、10文字以内の日本語タイトルを1つだけ出力してください。余計な説明は不要です。"
+            prompt = "この写真の内容を分析し、20文字以内の日本語タイトルを1つだけ出力してください。余計な説明は不要です。
+                    【留意事項】写真には電気設備が写っている場合が多くあります。その場合、特に写実的で具体的なタイトルとしてください。
+                                写真に文字や数字が写っている場合はタイトルにその内容を加えてください。"
             response = model.generate_content([prompt, img])
             if response and response.text:
                 ai_title = response.text.strip().replace("\n", "").replace("/", "-").replace(" ", "")
