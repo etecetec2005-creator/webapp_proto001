@@ -36,10 +36,7 @@ if img_file:
             if response and response.text:
                 ai_title = response.text.strip().replace("\n", "").replace("/", "-").replace(" ", "")
         except Exception as e:
-            if "429" in str(e):
-                st.warning("⚠️ Gemini APIの利用制限に達しました。")
-            else:
-                st.warning(f"⚠️ AI解析をスキップしました: {e}")
+            st.warning(f"⚠️ AI解析をスキップしました: {e}")
 
     # 3. 画像のBase64変換
     buffered = io.BytesIO()
@@ -61,7 +58,6 @@ if img_file:
         const oW = {width};
         const oH = {height};
 
-        // 日時フォーマット(yymmddhhmm)
         const now = new Date();
         const dateStr = now.getFullYear().toString().slice(-2) + 
                         ('0' + (now.getMonth() + 1)).slice(-2) + 
@@ -77,37 +73,44 @@ if img_file:
                 let stationName = "駅名不明";
 
                 try {{
-                    // 1. 住所取得 (Nominatim) - 宮原三丁目等を確実に拾うロジック
+                    // 1. 住所取得：取りこぼしを防ぐため全パーツをチェック
                     const addrRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${{lat}}&lon=${{lon}}&zoom=18&addressdetails=1&accept-language=ja`);
                     const addrData = await addrRes.json();
+                    
                     if (addrData && addrData.address) {{
                         const a = addrData.address;
-                        const city = a.city || a.town || a.village || "";
-                        const dist = a.city_district || "";
-                        const town = a.suburb || a.neighbourhood || a.road || "";
-                        finalAddr = (city + dist + town).replace(/日本|〒[0-9-]+/g, "").trim();
+                        
+                        // 候補となるパーツを順番に並べる
+                        const parts = [
+                            a.city || a.town || a.village || "",
+                            a.city_district || "",
+                            a.suburb || "",
+                            a.neighbourhood || "",
+                            a.road || ""
+                        ];
+                        
+                        // 空文字を除去し、重複を排除して結合
+                        finalAddr = [...new Set(parts.filter(p => p !== ""))].join("");
+                        finalAddr = finalAddr.replace(/日本|〒[0-9-]+/g, "").trim();
                     }}
 
-                    // 2. 最寄り駅取得 (HeartRails)
+                    // 2. 最寄り駅取得
                     const stRes = await fetch(`https://express.heartrails.com/api/json?method=getStations&x=${{lon}}&y=${{lat}}`);
                     const stData = await stRes.json();
                     if (stData.response && stData.response.station && stData.response.station.length > 0) {{
                         stationName = stData.response.station[0].name + "駅";
                     }}
                 }} catch (e) {{
-                    console.error("Fetch error", e);
+                    console.error(e);
                 }}
                 processAndSave(finalAddr, stationName);
             }},
-            (err) => {{
-                processAndSave("位置情報なし", "駅名なし");
-            }},
+            (err) => {{ processAndSave("位置情報なし", "駅名なし"); }},
             {{ enableHighAccuracy: true, timeout: 7000 }}
         );
 
         function processAndSave(addr, stn) {{
             const displayText = aiTitle + " _ " + addr + " _ " + stn;
-            // ファイル名禁止文字を置換
             const safeAddr = addr.replace(/[/\\\\?%*:|"<>]/g, '-');
             const fileName = dateStr + "_" + aiTitle + "_" + safeAddr + "_" + stn + ".jpg";
 
