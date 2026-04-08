@@ -1,81 +1,148 @@
 import streamlit as st
+import google.generativeai as genai
+from PIL import Image
+import io
+import os
+import base64
 
-st.set_page_config(page_title="位置情報取得", layout="centered")
-st.title("住所 ＆ 最寄り駅 取得")
+# --- セキュリティ設定 ---
+api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    st.error("APIキーが設定されていません。StreamlitのSecretsに登録してください。")
+    st.stop()
 
-st.write("ボタンを押すと、現在の住所と最寄り駅を表示します。")
+genai.configure(api_key=api_key)
 
-# エラー回避のため、絵文字を排除し、f-stringを使わない純粋な文字列として定義します
-location_script = """
-<div id="result" style="font-size:15px; color:#333; padding:15px; background:#f0f2f6; border-radius:10px; border-left: 5px solid #007bff; min-height: 80px; line-height: 1.6;">
-    ここに情報が表示されます
-</div>
+# --- 基本設定 ---
+st.set_page_config(page_title="自動保存", layout="centered")
+st.title("📸 e-Photo")
 
-<button id="btn" style="margin-top:20px; padding:15px 24px; background-color:#007bff; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; font-size:16px;">
-    現在地を解析する
-</button>
+# カメラ入力
+img_file = st.camera_input("写真を撮る", key="camera_v25")
 
-<script>
-document.getElementById('btn').onclick = function() {
-    const resultDiv = document.getElementById('result');
-    const btn = document.getElementById('btn');
+if img_file:
+    # 1. 画像の読み込みとリサイズ準備
+    img = Image.open(img_file)
+    width, height = img.size 
+    st.image(img, caption="解析・保存プロセスを実行中...")
+
+    # 2. AI解析（Gemini 2.5 Flash-Lite）
+    ai_title = "名称未設定"
+    with st.spinner("Gemini 2.5 Flash-Lite が解析中..."):
+        try:
+            model = genai.GenerativeModel('gemini-2.5-flash-lite')
+            prompt = "この写真の内容を分析し、10文字以内の日本語タイトルを1つだけ出力してください。余計な説明は不要です。"
+            response = model.generate_content([prompt, img])
+            if response and response.text:
+                ai_title = response.text.strip().replace("\n", "").replace("/", "-").replace(" ", "")
+        except Exception as e:
+            if "429" in str(e):
+                st.warning("⚠️ Gemini APIの利用制限に達しました。")
+            else:
+                st.warning(f"⚠️ AI解析をスキップしました: {e}")
+
+    # 3. 画像のBase64変換
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG", quality=100, subsampling=0)
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+
+    # 4. 全自動JavaScript（住所・駅取得 ＋ 文字埋め込み ＋ JPG保存）
+    st.success(f"タイトル確定: {ai_title}")
     
-    resultDiv.innerHTML = "解析中...";
-    btn.disabled = true;
-    btn.style.backgroundColor = "#ccc";
+    auto_save_script = f"""
+    <div id="status" style="font-size:12px; color:gray; padding:10px; background:#f9f9f9; border-radius:5px;">
+        📍 位置情報と駅名を特定して、画像を保存します...
+    </div>
+    <script>
+    (async function() {{
+        const status = document.getElementById('status');
+        const aiTitle = "{ai_title}";
+        const imgBase64 = "data:image/jpeg;base64,{img_str}";
+        const oW = {width};
+        const oH = {height};
 
-    navigator.geolocation.getCurrentPosition(
-        async function(pos) {
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
+        // 日時フォーマット(yymmddhhmm)
+        const now = new Date();
+        const dateStr = now.getFullYear().toString().slice(-2) + 
+                        ('0' + (now.getMonth() + 1)).slice(-2) + 
+                        ('0' + now.getDate()).slice(-2) + 
+                        ('0' + now.getHours()).slice(-2) + 
+                        ('0' + now.getMinutes()).slice(-2);
+
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {{
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                let finalAddr = "住所不明";
+                let stationName = "駅名不明";
+
+                try {{
+                    // 1. 住所取得 (Nominatim) - 宮原三丁目等を確実に拾うロジック
+                    const addrRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${{lat}}&lon=${{lon}}&zoom=18&addressdetails=1&accept-language=ja`);
+                    const addrData = await addrRes.json();
+                    if (addrData && addrData.address) {{
+                        const a = addrData.address;
+                        const city = a.city || a.town || a.village || "";
+                        const dist = a.city_district || "";
+                        const town = a.suburb || a.neighbourhood || a.road || "";
+                        finalAddr = (city + dist + town).replace(/日本|〒[0-9-]+/g, "").trim();
+                    }}
+
+                    // 2. 最寄り駅取得 (HeartRails)
+                    const stRes = await fetch(`https://express.heartrails.com/api/json?method=getStations&x=${{lon}}&y=${{lat}}`);
+                    const stData = await stRes.json();
+                    if (stData.response && stData.response.station && stData.response.station.length > 0) {{
+                        stationName = stData.response.station[0].name + "駅";
+                    }}
+                }} catch (e) {{
+                    console.error("Fetch error", e);
+                }}
+                processAndSave(finalAddr, stationName);
+            }},
+            (err) => {{
+                processAndSave("位置情報なし", "駅名なし");
+            }},
+            {{ enableHighAccuracy: true, timeout: 7000 }}
+        );
+
+        function processAndSave(addr, stn) {{
+            const displayText = aiTitle + " _ " + addr + " _ " + stn;
+            // ファイル名禁止文字を置換
+            const safeAddr = addr.replace(/[/\\\\?%*:|"<>]/g, '-');
+            const fileName = dateStr + "_" + aiTitle + "_" + safeAddr + "_" + stn + ".jpg";
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
             
-            try {
-                // 1. 住所の取得 (OSM Nominatim)
-                const addrUrl = "https://nominatim.openstreetmap.org/reverse?format=json&lat=" + lat + "&lon=" + lon + "&zoom=18&addressdetails=1&accept-language=ja";
-                const addrRes = await fetch(addrUrl);
-                const addrData = await addrRes.json();
+            img.onload = function() {{
+                canvas.width = oW;
+                canvas.height = oH;
+                ctx.drawImage(img, 0, 0, oW, oH);
                 
-                let displayAddr = "住所不明";
-                if (addrData && addrData.address) {
-                    const a = addrData.address;
-                    const city = a.city || a.town || a.village || "";
-                    const dist = a.city_district || "";
-                    const town = a.suburb || a.neighbourhood || a.road || a.quarter || "";
-                    
-                    displayAddr = (city + dist + town).replace(/日本|〒[0-9-]+/g, "").trim();
-                }
-
-                // 2. 最寄り駅の取得 (HeartRails Express API)
-                const stationUrl = "https://express.heartrails.com/api/json?method=getStations&x=" + lon + "&y=" + lat;
-                const stationRes = await fetch(stationUrl);
-                const stationData = await stationRes.json();
+                const fontSize = Math.floor(oH / 30); 
+                ctx.font = "bold " + fontSize + "px sans-serif";
+                ctx.textBaseline = "top";
+                const padding = fontSize / 2;
+                const textWidth = ctx.measureText(displayText).width;
                 
-                let displayStation = "駅が見つかりませんでした";
-                if (stationData.response && stationData.response.station && stationData.response.station.length > 0) {
-                    const s = stationData.response.station[0];
-                    displayStation = s.name + "駅";
-                }
-
-                // 3. 結果の表示
-                resultDiv.innerHTML = "<strong>住所:</strong><br>" + displayAddr + 
-                                     "<br><br><strong>最寄り駅:</strong><br>" + displayStation;
-
-            } catch (error) {
-                resultDiv.innerHTML = "エラー: 情報の取得に失敗しました。";
-            } finally {
-                btn.disabled = false;
-                btn.style.backgroundColor = "#007bff";
-            }
-        },
-        function(err) {
-            resultDiv.innerHTML = "位置情報の取得を許可してください。";
-            btn.disabled = false;
-            btn.style.backgroundColor = "#007bff";
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-    );
-};
-</script>
-"""
-
-st.components.v1.html(location_script, height=300)
+                ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.fillRect(20, 20, textWidth + (padding * 2), fontSize + (padding * 2));
+                
+                ctx.fillStyle = "white";
+                ctx.fillText(displayText, 20 + padding, 20 + padding);
+                
+                const link = document.createElement('a');
+                link.download = fileName;
+                link.href = canvas.toDataURL('image/jpeg', 1.0);
+                link.click();
+                
+                status.style.color = "green";
+                status.innerText = "✅ 保存完了: " + fileName;
+            }};
+            img.src = imgBase64;
+        }}
+    }})();
+    </script>
+    """
+    st.components.v1.html(auto_save_script, height=120)
