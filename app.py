@@ -14,7 +14,7 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 # --- 基本設定 ---
-st.set_page_config(page_title="自動保存", layout="centered")
+st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
 # カメラ入力
