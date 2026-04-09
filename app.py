@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-from PIL import Image, ImageOps  # ImageOpsを追加
+from PIL import Image, ImageOps
 import io
 import os
 import base64
@@ -17,18 +17,23 @@ genai.configure(api_key=api_key)
 st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
-# 高画質対応のため file_uploader を使用（iPhoneのカメラアプリが起動します）
-img_file = st.file_uploader("撮影または画像を選択（高画質）", type=["jpg", "jpeg", "png"])
+# 高画質で取り込み（後でリサイズ）
+img_file = st.file_uploader("撮影または画像を選択", type=["jpg", "jpeg", "png"])
 
 if img_file:
     # 1. 画像の読み込みと回転補正
     raw_img = Image.open(img_file)
-    
-    # 【重要】iPhone等のEXIF回転情報を読み取り、正しい向きに修正
     img = ImageOps.exif_transpose(raw_img)
     
-    width, height = img.size 
-    st.image(img, caption="解析・保存プロセスを実行中...", use_container_width=True)
+    # --- 【改良：解像度を1/3にリサイズ】 ---
+    original_width, original_height = img.size
+    # 整数値で1/3のサイズを計算
+    new_width = original_width // 3
+    new_height = original_height // 3
+    
+    # 高品質なリサイズ処理（LANCZOSフィルター）
+    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    st.image(img, caption=f"解像度を1/3に調整しました ({new_width}x{new_height})", use_container_width=True)
 
     # 2. AI解析（Gemini 2.5 Flash-Lite）
     ai_title = "名称未設定"
@@ -48,8 +53,8 @@ if img_file:
 
     # 3. 画像のBase64変換（保存用）
     buffered = io.BytesIO()
-    # 保存時も最高画質を維持
-    img.save(buffered, format="JPEG", quality=100, subsampling=0)
+    # quality=90程度にするとさらにファイルサイズを抑えられます
+    img.save(buffered, format="JPEG", quality=90, subsampling=0)
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
     # 4. 全自動JavaScript（住所・駅取得 ＋ 文字埋め込み ＋ JPG保存）
@@ -64,8 +69,8 @@ if img_file:
         const status = document.getElementById('status');
         const aiTitle = "{ai_title}";
         const imgBase64 = "data:image/jpeg;base64,{img_str}";
-        const oW = {width};
-        const oH = {height};
+        const oW = {new_width};
+        const oH = {new_height};
 
         const now = new Date();
         const dateStr = now.getFullYear().toString().slice(-2) + 
@@ -126,7 +131,8 @@ if img_file:
                 canvas.height = oH;
                 ctx.drawImage(img, 0, 0, oW, oH);
                 
-                const fontSize = Math.floor(oH / 30); 
+                // 解像度に合わせてフォントサイズを再調整
+                const fontSize = Math.floor(oH / 25); 
                 ctx.font = "bold " + fontSize + "px sans-serif";
                 ctx.textBaseline = "top";
                 const padding = fontSize / 2;
@@ -140,7 +146,7 @@ if img_file:
                 
                 const link = document.createElement('a');
                 link.download = fileName;
-                link.href = canvas.toDataURL('image/jpeg', 1.0);
+                link.href = canvas.toDataURL('image/jpeg', 0.9); // 保存時の品質を0.9に設定
                 link.click();
                 
                 status.style.color = "green";
