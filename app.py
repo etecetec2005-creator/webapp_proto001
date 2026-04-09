@@ -18,7 +18,7 @@ st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
 # カメラ入力
-img_file = st.file_uploader("撮影または画像を選択（高画質）", type=["jpg", "jpeg", "png"], accept_magic_file=True)
+img_file = st.file_uploader("撮影または画像を選択（高画質）", type=["jpg", "jpeg", "png"])
 
 if img_file:
     # 1. 画像の読み込みとリサイズ準備
