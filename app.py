@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-from PIL import Image
+from PIL import Image, ImageOps  # ImageOpsを追加
 import io
 import os
 import base64
@@ -17,21 +17,24 @@ genai.configure(api_key=api_key)
 st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
-# カメラ入力
+# 高画質対応のため file_uploader を使用（iPhoneのカメラアプリが起動します）
 img_file = st.file_uploader("撮影または画像を選択（高画質）", type=["jpg", "jpeg", "png"])
 
 if img_file:
-    # 1. 画像の読み込みとリサイズ準備
-    img = Image.open(img_file)
+    # 1. 画像の読み込みと回転補正
+    raw_img = Image.open(img_file)
+    
+    # 【重要】iPhone等のEXIF回転情報を読み取り、正しい向きに修正
+    img = ImageOps.exif_transpose(raw_img)
+    
     width, height = img.size 
-    st.image(img, caption="解析・保存プロセスを実行中...")
+    st.image(img, caption="解析・保存プロセスを実行中...", use_container_width=True)
 
     # 2. AI解析（Gemini 2.5 Flash-Lite）
     ai_title = "名称未設定"
     with st.spinner("Gemini 2.5 Flash-Lite が解析中..."):
         try:
             model = genai.GenerativeModel('gemini-2.5-flash-lite')
-            # プロンプトの変更：20文字以内、電気設備・文字情報への留意事項を追加
             prompt = """この写真の内容を分析し、20文字以内の日本語タイトルを1つだけ出力してください。
 【留意事項】写真には電気設備が写っている場合が多くあります。その場合、特に写実的で具体的なタイトルとしてください。
 写真に文字や数字が写っている場合はタイトルにその内容も加えてください。
@@ -43,8 +46,9 @@ if img_file:
         except Exception as e:
             st.warning(f"⚠️ AI解析をスキップしました: {e}")
 
-    # 3. 画像のBase64変換
+    # 3. 画像のBase64変換（保存用）
     buffered = io.BytesIO()
+    # 保存時も最高画質を維持
     img.save(buffered, format="JPEG", quality=100, subsampling=0)
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
@@ -78,14 +82,11 @@ if img_file:
                 let stationName = "駅名不明";
 
                 try {{
-                    // 1. 住所取得：取りこぼしを防ぐため全パーツをチェック
                     const addrRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${{lat}}&lon=${{lon}}&zoom=18&addressdetails=1&accept-language=ja`);
                     const addrData = await addrRes.json();
                     
                     if (addrData && addrData.address) {{
                         const a = addrData.address;
-                        
-                        // 候補となるパーツを順番に並べる
                         const parts = [
                             a.city || a.town || a.village || "",
                             a.city_district || "",
@@ -93,13 +94,10 @@ if img_file:
                             a.neighbourhood || "",
                             a.road || ""
                         ];
-                        
-                        // 空文字を除去し、重複を排除して結合
                         finalAddr = [...new Set(parts.filter(p => p !== ""))].join("");
                         finalAddr = finalAddr.replace(/日本|〒[0-9-]+/g, "").trim();
                     }}
 
-                    // 2. 最寄り駅取得
                     const stRes = await fetch(`https://express.heartrails.com/api/json?method=getStations&x=${{lon}}&y=${{lat}}`);
                     const stData = await stRes.json();
                     if (stData.response && stData.response.station && stData.response.station.length > 0) {{
