@@ -18,7 +18,6 @@ st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
 # --- リセット機能の改良 ---
-# uploaderのkeyを動的に変えることで、表示を強制的に初期化します
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
@@ -26,7 +25,7 @@ def reset_app():
     # セッション内の値をすべてクリア
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    # アップローダーを初期化するためにkeyをインクリメント
+    # アップローダーを初期化するためにkeyを更新
     st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
     st.rerun()
 
@@ -156,15 +155,21 @@ if img_file:
                 canvas.height = oH;
                 ctx.drawImage(img, 0, 0, oW, oH);
                 
-                const fontSize = Math.floor(oH / 28); 
-                ctx.font = "bold " + fontSize + "px sans-serif";
+                // 【改良】フォントサイズを小さく調整 (oH / 40)
+                const fontSize = Math.floor(oH / 40); 
+                // 最低限の読みやすさを確保（小さくなりすぎ防止）
+                const finalFontSize = fontSize < 16 ? 16 : fontSize;
+                
+                ctx.font = "bold " + finalFontSize + "px sans-serif";
                 ctx.textBaseline = "top";
-                const padding = fontSize / 2;
+                const padding = finalFontSize / 2;
                 const textWidth = ctx.measureText(displayText).width;
                 
+                // 背景の黒帯
                 ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-                ctx.fillRect(20, 20, textWidth + (padding * 2), fontSize + (padding * 2));
+                ctx.fillRect(20, 20, textWidth + (padding * 2), finalFontSize + (padding * 2));
                 
+                // 文字の描画
                 ctx.fillStyle = "white";
                 ctx.fillText(displayText, 20 + padding, 20 + padding);
                 
