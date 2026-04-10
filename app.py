@@ -17,35 +17,41 @@ genai.configure(api_key=api_key)
 st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
-# --- リセット機能の定義 ---
+# --- リセット機能 ---
 def reset_app():
-    # セッション内の関連データを消去
-    for key in ["ai_title", "img_str", "processed_size"]:
-        if key in st.session_state:
-            del st.session_state[key]
-    # アプリを再起動して初期状態に戻す
+    for key in st.session_state.keys():
+        del st.session_state[key]
     st.rerun()
 
-# サイドバーまたはメイン画面にリセットボタンを配置
 if st.button("🔄 画面をリセットして最初に戻る"):
     reset_app()
 
-# 画像アップローダー（iPhoneカメラ起動対応）
+# 画像アップローダー
 img_file = st.file_uploader("撮影または画像を選択", type=["jpg", "jpeg", "png"])
 
 if img_file:
+    # ファイルサイズの取得 (バイト単位)
+    file_size_mb = img_file.size / (1024 * 1024)
+    
     # 1. 画像の読み込みと回転補正
     raw_img = Image.open(img_file)
     img = ImageOps.exif_transpose(raw_img)
     
-    # 【解像度を1/3にリサイズ】
+    # --- 【条件付きリサイズ処理】 ---
     original_width, original_height = img.size
-    new_width = original_width // 3
-    new_height = original_height // 3
     
-    # 高品質リサイズ
-    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    st.image(img, caption=f"解像度を1/3に調整済み ({new_width}x{new_height})", use_container_width=True)
+    if file_size_mb >= 1.0:
+        # 1MB以上の場合は1/3にリサイズ
+        new_width = original_width // 3
+        new_height = original_height // 3
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        resize_msg = f"⚠️ ファイルサイズが大きいためリサイズしました ({file_size_mb:.2f}MB → 1/3)"
+    else:
+        # 1MB未満の場合はサイズ維持
+        new_width, new_height = original_width, original_height
+        resize_msg = f"✅ オリジナル解像度を維持しました ({file_size_mb:.2f}MB)"
+    
+    st.image(img, caption=f"{resize_msg} : {new_width}x{new_height}", use_container_width=True)
 
     # 2. AI解析（Gemini 2.5 Flash-Lite）
     ai_title = "名称未設定"
@@ -63,8 +69,9 @@ if img_file:
         except Exception as e:
             st.warning(f"⚠️ AI解析をスキップしました: {e}")
 
-    # 3. 画像のBase64変換（保存用）
+    # 3. 画像のBase64変換
     buffered = io.BytesIO()
+    # リサイズしない場合でも、保存時の品質を調整してファイルサイズを最適化
     img.save(buffered, format="JPEG", quality=90, subsampling=0)
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
@@ -73,7 +80,7 @@ if img_file:
     
     auto_save_script = f"""
     <div id="status" style="font-size:12px; color:gray; padding:10px; background:#f9f9f9; border-radius:5px; border-left: 5px solid #2e7d32; margin-top: 10px;">
-        📍 位置情報と駅名を特定して、画像を自動保存します...
+        📍 位置情報を特定して自動保存します...
     </div>
     <script>
     (async function() {{
@@ -100,7 +107,6 @@ if img_file:
                 try {{
                     const addrRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${{lat}}&lon=${{lon}}&zoom=18&addressdetails=1&accept-language=ja`);
                     const addrData = await addrRes.json();
-                    
                     if (addrData && addrData.address) {{
                         const a = addrData.address;
                         const parts = [
@@ -119,9 +125,7 @@ if img_file:
                     if (stData.response && stData.response.station && stData.response.station.length > 0) {{
                         stationName = stData.response.station[0].name + "駅";
                     }}
-                }} catch (e) {{
-                    console.error(e);
-                }}
+                }} catch (e) {{ console.error(e); }}
                 processAndSave(finalAddr, stationName);
             }},
             (err) => {{ processAndSave("位置情報なし", "駅名なし"); }},
@@ -142,7 +146,8 @@ if img_file:
                 canvas.height = oH;
                 ctx.drawImage(img, 0, 0, oW, oH);
                 
-                const fontSize = Math.floor(oH / 25); 
+                // 画像の高さに応じてフォントサイズを動的に変更
+                const fontSize = Math.floor(oH / 28); 
                 ctx.font = "bold " + fontSize + "px sans-serif";
                 ctx.textBaseline = "top";
                 const padding = fontSize / 2;
@@ -160,7 +165,7 @@ if img_file:
                 link.click();
                 
                 status.style.color = "#1b5e20";
-                status.innerText = "✅ 保存が完了しました。続けて撮影する場合は「リセット」を押してください。";
+                status.innerText = "✅ 保存完了。続けて撮影する場合は「リセット」を押してください。";
             }};
             img.src = imgBase64;
         }}
