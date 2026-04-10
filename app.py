@@ -17,7 +17,20 @@ genai.configure(api_key=api_key)
 st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
-# 高画質で取り込み（後でリサイズ）
+# --- リセット機能の定義 ---
+def reset_app():
+    # セッション内の関連データを消去
+    for key in ["ai_title", "img_str", "processed_size"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    # アプリを再起動して初期状態に戻す
+    st.rerun()
+
+# サイドバーまたはメイン画面にリセットボタンを配置
+if st.button("🔄 画面をリセットして最初に戻る"):
+    reset_app()
+
+# 画像アップローダー（iPhoneカメラ起動対応）
 img_file = st.file_uploader("撮影または画像を選択", type=["jpg", "jpeg", "png"])
 
 if img_file:
@@ -25,15 +38,14 @@ if img_file:
     raw_img = Image.open(img_file)
     img = ImageOps.exif_transpose(raw_img)
     
-    # --- 【改良：解像度を1/3にリサイズ】 ---
+    # 【解像度を1/3にリサイズ】
     original_width, original_height = img.size
-    # 整数値で1/3のサイズを計算
     new_width = original_width // 3
     new_height = original_height // 3
     
-    # 高品質なリサイズ処理（LANCZOSフィルター）
+    # 高品質リサイズ
     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    st.image(img, caption=f"解像度を1/3に調整しました ({new_width}x{new_height})", use_container_width=True)
+    st.image(img, caption=f"解像度を1/3に調整済み ({new_width}x{new_height})", use_container_width=True)
 
     # 2. AI解析（Gemini 2.5 Flash-Lite）
     ai_title = "名称未設定"
@@ -53,7 +65,6 @@ if img_file:
 
     # 3. 画像のBase64変換（保存用）
     buffered = io.BytesIO()
-    # quality=90程度にするとさらにファイルサイズを抑えられます
     img.save(buffered, format="JPEG", quality=90, subsampling=0)
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
@@ -61,8 +72,8 @@ if img_file:
     st.success(f"タイトル確定: {ai_title}")
     
     auto_save_script = f"""
-    <div id="status" style="font-size:12px; color:gray; padding:10px; background:#f9f9f9; border-radius:5px;">
-        📍 位置情報と駅名を特定して、画像を保存します...
+    <div id="status" style="font-size:12px; color:gray; padding:10px; background:#f9f9f9; border-radius:5px; border-left: 5px solid #2e7d32; margin-top: 10px;">
+        📍 位置情報と駅名を特定して、画像を自動保存します...
     </div>
     <script>
     (async function() {{
@@ -131,7 +142,6 @@ if img_file:
                 canvas.height = oH;
                 ctx.drawImage(img, 0, 0, oW, oH);
                 
-                // 解像度に合わせてフォントサイズを再調整
                 const fontSize = Math.floor(oH / 25); 
                 ctx.font = "bold " + fontSize + "px sans-serif";
                 ctx.textBaseline = "top";
@@ -146,15 +156,18 @@ if img_file:
                 
                 const link = document.createElement('a');
                 link.download = fileName;
-                link.href = canvas.toDataURL('image/jpeg', 0.9); // 保存時の品質を0.9に設定
+                link.href = canvas.toDataURL('image/jpeg', 0.85); 
                 link.click();
                 
-                status.style.color = "green";
-                status.innerText = "✅ 保存完了: " + fileName;
+                status.style.color = "#1b5e20";
+                status.innerText = "✅ 保存が完了しました。続けて撮影する場合は「リセット」を押してください。";
             }};
             img.src = imgBase64;
         }}
     }})();
     </script>
     """
-    st.components.v1.html(auto_save_script, height=120)
+    st.components.v1.html(auto_save_script, height=130)
+
+else:
+    st.info("上のボタンからカメラを起動して撮影するか、画像を選択してください。")
