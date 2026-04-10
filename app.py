@@ -17,17 +17,28 @@ genai.configure(api_key=api_key)
 st.set_page_config(page_title="e-Photo_000", layout="centered")
 st.title("📸 e-Photo")
 
-# --- リセット機能 ---
+# --- リセット機能の改良 ---
+# uploaderのkeyを動的に変えることで、表示を強制的に初期化します
+if "uploader_key" not in st.session_state:
+    st.session_state["uploader_key"] = 0
+
 def reset_app():
-    for key in st.session_state.keys():
+    # セッション内の値をすべてクリア
+    for key in list(st.session_state.keys()):
         del st.session_state[key]
+    # アップローダーを初期化するためにkeyをインクリメント
+    st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
     st.rerun()
 
 if st.button("🔄 画面をリセットして最初に戻る"):
     reset_app()
 
-# 画像アップローダー
-img_file = st.file_uploader("撮影または画像を選択", type=["jpg", "jpeg", "png"])
+# 画像アップローダー (keyを指定することで強制リセットを可能にする)
+img_file = st.file_uploader(
+    "撮影または画像を選択", 
+    type=["jpg", "jpeg", "png"], 
+    key=f"uploader_{st.session_state['uploader_key']}"
+)
 
 if img_file:
     # ファイルサイズの取得 (バイト単位)
@@ -45,11 +56,11 @@ if img_file:
         new_width = original_width // 3
         new_height = original_height // 3
         img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        resize_msg = f"⚠️ ファイルサイズが大きいためリサイズしました ({file_size_mb:.2f}MB → 1/3)"
+        resize_msg = f"⚠️ リサイズしました ({file_size_mb:.2f}MB → 1/3)"
     else:
         # 1MB未満の場合はサイズ維持
         new_width, new_height = original_width, original_height
-        resize_msg = f"✅ オリジナル解像度を維持しました ({file_size_mb:.2f}MB)"
+        resize_msg = f"✅ オリジナル解像度維持 ({file_size_mb:.2f}MB)"
     
     st.image(img, caption=f"{resize_msg} : {new_width}x{new_height}", use_container_width=True)
 
@@ -71,7 +82,6 @@ if img_file:
 
     # 3. 画像のBase64変換
     buffered = io.BytesIO()
-    # リサイズしない場合でも、保存時の品質を調整してファイルサイズを最適化
     img.save(buffered, format="JPEG", quality=90, subsampling=0)
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
@@ -146,7 +156,6 @@ if img_file:
                 canvas.height = oH;
                 ctx.drawImage(img, 0, 0, oW, oH);
                 
-                // 画像の高さに応じてフォントサイズを動的に変更
                 const fontSize = Math.floor(oH / 28); 
                 ctx.font = "bold " + fontSize + "px sans-serif";
                 ctx.textBaseline = "top";
