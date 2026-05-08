@@ -22,7 +22,7 @@ app_mode = st.sidebar.selectbox(
 
 # --- 1. e-Photo📝黒板 モード ---
 if app_mode == "e-Photo📝黒板":
-    st.title("📸 e-Photo📝黒板")
+    st.title("📸 e-Photo📝黒板だよ")
 
     url_params = st.query_params
     initial_project_name = url_params.get("project_name", "")
